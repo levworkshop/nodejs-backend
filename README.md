@@ -1,5 +1,7 @@
 # Cards
 
+React.js, Node.js, MongoDB
+
 ### Install dependencies:
 `$ npm i`
 

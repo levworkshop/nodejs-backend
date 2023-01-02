@@ -1,161 +1,179 @@
 const joi = require('joi');
-const database = require('./database');
+const { User } = require('../models/User');
+const { Card } = require('../models/Card');
 
 module.exports = {
-    getListByCustomer: async function (req, res, next) {
-        const schema = joi.object({
-            id: joi.string().required(),
-        });
-
-        const { error, value } = schema.validate(req.params);
-
-        if (error) {
-            res.status(400).send(`error get cards of a customer`);
-            console.log(error.details[0].message);
-            return;
-        }
-        
-        const sql = `SELECT 
-            cards.*, customers.id AS customers_id, 
-            customers.name AS customers_name, customers.email, customers.business 
-        FROM cards
-        LEFT JOIN customers ON cards.customer_id = customers.id;`;
-
+    list: async function (req, res, next) {
         try {
-            const result = await database.query(sql, [value.id]);
-            res.json(result[0]);
+            const result = await Card.find({});
+            res.json(result);
         }
         catch (err) {
-            res.status(400).send(`error get cards of a customer`);
+            console.log(err);
+            res.status(400).json({ error: 'error getting cards' });
+        }
+    },
+
+    details: async function (req, res, next) {
+        try {
+            const schema = joi.object({
+                id: joi.string().required(),
+            });
+
+            const { error, value } = schema.validate(req.params);
+
+            if (error) {
+                console.log(error.details[0].message);
+                throw `error get details`;
+            }
+
+            const card = await Card.findById(value.id);
+            if (!card) throw "Invalid card id, no such card.";
+            res.json(card);
+        }
+        catch (err) {
+            res.status(400).json({ error: "Invalid data" });
+            console.log(`Error: ${err}`);
+        }
+    },
+
+    userCards: async function (req, res, next) {
+        try {
+            const schema = joi.object({
+                id: joi.string().required(),
+            });
+
+            const { error, value } = schema.validate(req.params);
+
+            if (error) {
+                console.log(error.details[0].message);
+                throw 'error get details';
+            }
+
+            const user = await User.findById(value.id);
+            if (!user || !user.isBiz) throw "Invalid user id, no such user.";
+
+            const cards = await Card.find({ user_id: user._id });
+            res.json(cards);
+        }
+        catch (err) {
+            res.status(400).json({ error: `error get cards of a user` });
             console.log(err.message);
         }
     },
-    
-    getDetails: async function (req, res, next) {
-        const schema = joi.object({
-            id: joi.string().required(),
-        });
 
-        const { error, value } = schema.validate(req.params);
-
-        if (error) {
-            res.status(400).send(`error get details`);
-            console.log(error.details[0].message);
-            return;
-        }
-        
-        const sql = `SELECT * FROM cards WHERE id=?;`;
-
-        try {
-            const result = await database.query(sql, [value.id]);
-            res.json(result[0]);
-        }
-        catch (err) {
-            res.status(400).send(`error get details`);
-            console.log(err.message);
-        }
-    },
-    
     addNew: async function (req, res, next) {
-        const schema = joi.object({
-            name: joi.string().required().min(2).max(100),
-            description: joi.string().min(2).max(300).default(''),
-            address: joi.string().required().min(2).max(300),
-            phone: joi.string().required().regex(/^[0-9]{8,11}$/),
-            image: joi.string().min(5).max(200).default(''),
-            customer_id: joi.number().required(),
-        });
-
-        const { error, value } = schema.validate(req.body);
-
-        if (error) {
-            res.status(400).send(`error adding card`);
-            console.log(error.details[0].message);
-            return;
-        }
-        console.log(value);
-        const sql = `INSERT INTO cards
-            (name, description, address, phone, image, customer_id) VALUES(?,?,?,?,?,?);`;
-
         try {
-            const result = await database.query(sql, [
-                value.name,
-                value.description,
-                value.address,
-                value.phone,
-                value.image,
-                value.customer_id,
-            ]);
-            res.json({
-                name: value.name,
+            const user = await User.findOne({ email: req.token.email });
+            if (!user || !user.isBiz) throw "Not a business user";
+
+            const schema = joi.object({
+                title: joi.string().min(2).max(256).required(),
+                subTitle: joi.string().min(2).max(256).required(),
+                description: joi.string().min(2).max(1024).required(),
+                address: joi.string().min(2).max(256).required(),
+                phone: joi.string().min(9).max(14).required(),
+                url: joi.string().min(6).max(1024),
+                alt: joi.string().min(2).max(256),
+            });
+
+            const { error, value } = schema.validate(req.body);
+
+            if (error) {
+                console.log(error.details[0].message);
+                throw 'error add card';
+            }
+
+            const card = new Card({
+                title: value.title,
+                subTitle: value.subTitle,
                 description: value.description,
                 address: value.address,
                 phone: value.phone,
-                image: value.image,
-                customer: result[0].insertId
+                image: {
+                    url: value.url
+                        ? value.url
+                        : "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png",
+                    alt: value.alt ? value.alt : "Pic Of Business Card",
+                },
+                bizNumber: Math.floor(Math.random() * 10000000),
+                user_id: user._id,
             });
+
+            const newCard = await card.save();
+            res.json(newCard);
         }
         catch (err) {
-            res.status(400).send(`error adding card`);
             console.log(err.message);
+            res.status(400).json({ error: `error adding card` });
         }
     },
 
     updateDetails: async function (req, res, next) {
-        const schema = joi.object({
-            name: joi.string().min(2).max(100),
-            description: joi.string().min(2).max(300),
-            address: joi.string().min(2).max(300),
-            phone: joi.string().regex(/^[0-9]{8,11}$/),
-            image: joi.string().min(5).max(200),
-        }).min(1);
-
-        const { error, value } = schema.validate(req.body);
-
-        if (error) {
-            res.status(400).send(`error updating card`);
-            console.log(error.details[0].message);
-            return;
-        }
-                
-        const keys = Object.keys(value);
-        const values = Object.values(value); // const values = [...Object.values(value), req.params.id];
-        const fields = keys.map(key => `${key}=?`).join(',');
-        values.push(req.params.id);
-        const sql = `UPDATE cards SET ${fields} WHERE id=?;`;
-        
         try {
-            const result = await database.query(sql, values);
-            res.json(result[0]);
+            const user = await User.findOne({ email: req.token.email });
+            if (!user || !user.isBiz) throw "Not a business user";
+
+            const schema = joi.object({
+                title: joi.string().min(2).max(256).required(),
+                subTitle: joi.string().min(2).max(256).required(),
+                description: joi.string().min(2).max(1024).required(),
+                address: joi.string().min(2).max(256).required(),
+                phone: joi.string().min(9).max(14).required(),
+                url: joi.string().min(6).max(1024),
+                alt: joi.string().min(2).max(256),
+            }).min(1);
+
+            const { error, value } = schema.validate(req.body);
+
+            if (error) {
+                console.log(error.details[0].message);
+                throw 'error updating card';
+            }
+
+            const filter = {
+                _id: req.params.id,
+                userID: user._id,
+            };
+
+            const card = await Card.findOneAndUpdate(filter, value);
+            if (!card) throw "No card with this ID in the database";
+            const uCard = await Card.findById(card._id);
+            res.json(uCard);
         }
         catch (err) {
-            res.status(400).send(`error updating card`);
             console.log(err.message);
+            res.status(400).json({ error: `error updating card` });
         }
     },
-    
+
     deleteCard: async function (req, res, next) {
-        const schema = joi.object({
-            id: joi.string().required(),
-        });
-
-        const { error, value } = schema.validate(req.params);
-
-        if (error) {
-            res.status(400).send(`error delete card`);
-            console.log(error.details[0].message);
-            return;
-        }
-        
-        const sql = `DELETE FROM cards WHERE id=?;`;
-
         try {
-            const result = await database.query(sql, [value.id]);
-            res.json(result[0]);
+            const user = await User.findOne({ email: req.token.email });
+            if (!user || !user.isBiz) throw "Not a business user";
+
+            const schema = joi.object({
+                id: joi.string().required(),
+            });
+
+            const { error, value } = schema.validate(req.params);
+
+            if (error) {
+                console.log(error.details[0].message);
+                throw `error delete card`;
+            }
+
+            const deleted = await Card.findOneAndRemove({
+                _id: value.id,
+                user_id: user._id,
+            });
+
+            if (!deleted) throw "failed to delete";
+            res.json(deleted);
         }
         catch (err) {
-            res.status(400).send(`error delete card`);
             console.log(err.message);
+            res.status(400).json({ error: `error delete card` });
         }
     },
 }
