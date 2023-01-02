@@ -19,7 +19,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use(headers);
-app.use('/', auth, indexRouter);
+app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/cards', auth, cardsRouter);
 
